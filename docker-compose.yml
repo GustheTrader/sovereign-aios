@@ -1,0 +1,97 @@
+version: '3.9'
+
+services:
+  # PostgreSQL with pgvector for Multica + Open Brain
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: sovereign-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-multica}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${DB_NAME:-multica_os}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-multica}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Multica — Linear-style task management UI
+  multica:
+    image: ghcr.io/multica-ai/multica:latest
+    container_name: sovereign-multica
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-multica}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_NAME: ${DB_NAME:-multica_os}
+      JWT_SECRET: ${JWT_SECRET:-changeme}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Open Brain — Deep memory with semantic search (pgvector)
+  openbrain:
+    image: ghcr.io/postnikov/open-brain:latest
+    container_name: sovereign-openbrain
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-multica}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_NAME: ${DB_NAME:-multica_os}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Honcho — Hot memory for session state
+  honcho:
+    image: ghcr.io/plastic-labs/honcho:latest
+    container_name: sovereign-honcho
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-multica}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_NAME: ${DB_NAME:-multica_os}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # OpenWebUI — Local LLM backend (sovereign, no cloud)
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:latest
+    container_name: sovereign-openwebui
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-changeme}
+    ports:
+      - "11434:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  postgres_data:
+  openwebui_data:
